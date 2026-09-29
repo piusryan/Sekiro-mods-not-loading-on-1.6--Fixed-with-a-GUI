@@ -16,9 +16,27 @@ import subprocess
 import sys
 import threading
 import traceback
-import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+
+try:
+    import tkinter as tk
+    from tkinter import filedialog, messagebox, ttk
+except ImportError as exc:  # depends on the local Python, not on our code
+    # Microsoft Store and embeddable Python builds ship without tkinter, which
+    # otherwise surfaces as a bare ModuleNotFoundError traceback. The frozen
+    # .exe bundles tkinter and never reaches this branch.
+    sys.stderr.write(
+        "\nThe Mod Engine Fixer GUI needs tkinter, and this Python has none.\n"
+        f"\n  {exc}\n"
+        "\nFix it with one of these:\n"
+        "  * Install Python from python.org and tick 'Add Python to PATH'.\n"
+        "    That build includes tkinter.\n"
+        "  * If you installed Python from the Microsoft Store, uninstall it and\n"
+        "    use the python.org build instead -- the Store version omits tkinter.\n"
+        "\nOr skip the GUI entirely; the command line needs no tkinter:\n"
+        '  cd ui && python -m modengine_fixer.cli status --game-dir "C:\\Games\\Sekiro"\n'
+    )
+    raise SystemExit(1)
 
 # Plain import: works when run as `python ui\fixer.py` (sys.path[0] is ui\),
 # when imported as part of the package, and when frozen by PyInstaller.

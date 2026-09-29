@@ -99,11 +99,50 @@ Full technical analysis with the disassembly evidence: **[docs/ROOT_CAUSE.md](do
 
 ---
 
+## Requirements
+
+Pick whichever row matches how you got this.
+
+| If you... | You need |
+|---|---|
+| Downloaded a **Release ZIP** | **Nothing.** Double-click `ModEngineFixer.exe`. Python, Visual Studio and git are all optional. |
+| Downloaded a Release ZIP **and** will press *Build patched DLL* | Visual Studio 2022 (any edition) with the C++ workload. See [Requirements](#requirements). |
+| Cloned with `git` | **Python 3.9+** *and* Visual Studio 2022 with the C++ workload. The `.exe` and the prebuilt DLL are not in the repo. |
+
+There are **no pip packages.** Every script here uses only the Python standard
+library, so `pip install -r requirements.txt` is a deliberate no-op. Nothing
+registers a service, a driver, or a shell extension.
+
+### A note on Python and tkinter
+
+The GUI needs **tkinter**. The python.org Windows installer includes it. The
+**Microsoft Store** version of Python does **not**, and neither does the
+embeddable zip. If you see `No module named 'tkinter'`, that is why — install
+Python from [python.org](https://www.python.org/downloads/windows/) instead.
+
+You do not need the GUI at all. The command line has no tkinter dependency:
+
+```bat
+cd ui
+python -m modengine_fixer.cli status --game-dir "C:\Games\Sekiro"
+```
+
+> The `.exe` is not code-signed, so the first launch may show a SmartScreen
+> "Windows protected your PC" prompt. Choose *More info* → *Run anyway*.
+
+---
+
 ## Quick start
 
-**Easiest:** double-click `ModEngineFixer.exe`. No Python, no setup.
+**Easiest:** download a **Release ZIP**, unzip it anywhere, and double-click
+`ModEngineFixer.exe`. No Python, no setup, no Visual Studio.
 
-**Otherwise** you need **Python 3.9+** and the **game folder**:
+> The `.exe` and the prebuilt `dinput8_patched.dll` are build products and are
+> not stored in git, so a `git clone` will not contain them. Use a Release ZIP
+> if you want the no-setup path.
+
+**Otherwise** you need **Python 3.9+ with tkinter** (see
+[Requirements](#requirements)) and the **game folder**:
 
 ```bat
 git clone https://github.com/YOUR-USERNAME/Sekiro-ModEngine-1.6-Fix
@@ -368,9 +407,12 @@ the downloaded file at `src\build\dinput8_patched.dll`.
 
 ### Requirements
 
-- Visual Studio 2022 **Build Tools** with the **Desktop development with C++**
-  workload, and a Windows 10/11 SDK
-  - Fastest way to install just that:
+- Visual Studio 2022 with the **Desktop development with C++** workload and a
+  Windows 10/11 SDK. **Any edition works** — Community, Build Tools, Enterprise
+  or Professional, in any install location. `build.cmd` locates the toolchain
+  with `vswhere.exe` and falls back to the usual 2022 paths, and it reuses the
+  environment the GUI already set up when one is present.
+  - Fastest way to install just the free Build Tools:
 
     ```bat
     winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
