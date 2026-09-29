@@ -1,6 +1,8 @@
 # ---- build output ----
 src/build/
+src/fixer_gui/obj/
 *.obj
+*.res
 *.lib
 *.exp
 *.pdb
@@ -31,9 +33,9 @@ steam_emu.ini
 __pycache__/
 *.pyc
 
-# ---- PyInstaller (.exe is built locally, or attached to a Release) ----
-build_exe/
+# ---- the app binary (built locally with src\fixer_gui\build.cmd, or from a Release) ----
 ModEngineFixer.exe
+build_exe/
 fixer_crash.log
 
 # ---- editors / OS ----

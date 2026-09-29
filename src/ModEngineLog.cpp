@@ -40,13 +40,27 @@ void MELogInit()
 	gLogFile = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
 		nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 
-	// Console is opt-in via the debug section, but the log file is unconditional.
+	// The log file is unconditional, so everything useful is available without
+	// a console ever appearing.
 	gEcho = (GetPrivateProfileIntW(L"debug", L"showDebugLog", 0, L".\\modengine.ini") == 1);
 	gDebugLog = gEcho;
-	if (gEcho)
+
+	// Creating a console is a separate, explicit opt-in. sekiro.exe is a GUI
+	// subsystem app, so it starts with no console and calling AllocConsole()
+	// pops a stray black window that sits there for the whole session. Nobody
+	// asked for that and the log file already has the same output, so it only
+	// happens when showConsole=1 is set deliberately.
+	const bool wantConsole =
+		(GetPrivateProfileIntW(L"debug", L"showConsole", 0, L".\\modengine.ini") == 1);
+
+	if (wantConsole && GetConsoleWindow() == NULL)
+		AllocConsole();
+
+	// If a console exists by the time we get here -- either because the player
+	// asked for one, or because the game was started from a terminal -- write
+	// to it. Otherwise stay silent and let the log file do the work.
+	if (GetConsoleWindow() != NULL)
 	{
-		if (GetConsoleWindow() == NULL)
-			AllocConsole();
 		FILE* dummy = nullptr;
 		freopen_s(&dummy, "CONOUT$", "w", stdout);
 		freopen_s(&dummy, "CONOUT$", "w", stderr);

@@ -24,7 +24,7 @@ The full patched tree is also in `src/`, so you can copy files instead if
 | `ModLoader.cpp` | extended | Per-file override logging, inventory scan, hit/miss counters; `wprintf` routed to the logger |
 | `stdafx.h` | slimmed | Drop the ImGui/D3D11 includes the fix build does not use |
 | `ModEngineLog.h` | **new** | Logging API |
-| `ModEngineLog.cpp` | **new** | Thread-safe logger, always writes `modengine_load.log` |
+| `ModEngineLog.cpp` | **new** | Thread-safe logger, always writes `modengine_load.log`; a console window is opt-in via `showConsole` |
 | `LeoSpecial/LeoSpecial.h` | **new** | Minimal stub for a header upstream includes but never vendored |
 | `build.cmd` | **new** | Builds with `cl.exe` directly, bypassing the stale v142 project file |
 
@@ -208,6 +208,63 @@ exits, and `AllocConsole()` is unreliable from a worker thread.
 - One shared `gDebugLog` flag, set once in `MELogInit()`. Upstream declared
   `gDebugLog` in `dllmain.cpp` and `extern`'d it in two other files; it now
   lives in the logger next to the code that uses it.
+
+### The stray console window
+
+The first version of this logger echoed to a console when `showDebugLog=1`, and
+created one if needed:
+
+```cpp
+if (gEcho)
+{
+    if (GetConsoleWindow() == NULL)
+        AllocConsole();          // <- popped a black window
+    ...
+}
+```
+
+That is a problem. `sekiro.exe` is a GUI-subsystem application, so it starts with
+no console, and `AllocConsole()` therefore *always* succeeds and *always* puts a
+stray console window on screen — one that stays open for the entire session, in
+front of the game, because the log is only closed when the game exits. The GUI
+made it worse by writing `showDebugLog=1` into the `modengine.ini` it generates,
+so every user got one.
+
+The console is now a separate, explicit opt-in, and the two settings are no
+longer coupled:
+
+```cpp
+const bool wantConsole =
+    (GetPrivateProfileIntW(L"debug", L"showConsole", 0, L".\\modengine.ini") == 1);
+
+if (wantConsole && GetConsoleWindow() == NULL)
+    AllocConsole();
+
+if (GetConsoleWindow() != NULL)
+{
+    // rewire stdout/stderr and set gConsole
+}
+```
+
+- `[debug] showConsole=0` (the default, and what the GUI writes): never create a
+  console. The log file already contains everything `printf` would have shown.
+- `[debug] showConsole=1`: restore the old behaviour for anyone debugging by
+  hand.
+- A console that already exists — because the game was started from a terminal,
+  or because `showConsole=1` — is still written to. Nothing is lost, it is just
+  never created without being asked for.
+
+`showDebugLog` keeps its original meaning: how *much* detail is written. It no
+longer decides *where* it goes.
+
+**Launch sites.** Separately, every `CreateProcess` call that starts `sekiro.exe`
+now passes `CREATE_NO_WINDOW` (`core.py::launch_game`,
+`in_gameadd/launch_sekiro.py`, `tools/probe_steamhook.py`). Without it, the
+windowed `ModEngineFixer.exe` has no console of its own for the child to inherit,
+and Windows is free to give the game one. The GUI's **Play Sekiro** button also
+notes while the game is running and re-reads `modengine_load.log` on **Refresh**,
+so what the console would have shown is available *inside* the app, where it was
+meant to be read.
 
 ---
 

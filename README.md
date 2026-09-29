@@ -90,8 +90,9 @@ Full technical analysis with the disassembly evidence: **[docs/ROOT_CAUSE.md](do
 | Version gate | 1.02/1.03 file sizes only, then blocks | Removed, with the reason logged |
 | Game detection | Stub hardcoded to Dark Souls II | Real detection from the exe name |
 | Hardcoded 1.02/1.03 patch addresses | Present, land on random code on 1.6 | Removed |
-| Logging | Console only, gone when the game exits | Always writes `modengine_load.log` |
-| Verifying mods loaded | Impossible by hand | `mod_report.py` or one button in the GUI |
+| Logging | Console only, gone when the game exits | Always writes `modengine_load.log`; no stray console window |
+| Console window | Pops up at every launch on 1.6 | Opt-in only, via `showConsole=1` |
+| Verifying mods loaded | Impossible by hand | `mod_report.py`, or the GUI's live log pane |
 
 **The AOB scan itself does not need changing.** The 14-byte archive signature
 `40 55 56 41 54 41 55 48 83 EC 28 4D 8B E0` still matches on 1.6. See
@@ -106,21 +107,19 @@ Pick whichever row matches how you got this.
 | If you... | You need |
 |---|---|
 | Downloaded a **Release ZIP** | **Nothing.** Double-click `ModEngineFixer.exe`. Python, Visual Studio and git are all optional. |
-| Downloaded a Release ZIP **and** will press *Build patched DLL* | Visual Studio 2022 (any edition) with the C++ workload. See [Requirements](#requirements). |
-| Cloned with `git` | **Python 3.9+** *and* Visual Studio 2022 with the C++ workload. The `.exe` and the prebuilt DLL are not in the repo. |
+| Downloaded a Release ZIP **and** will press *Build DLL* | Visual Studio 2022 (any edition) with the C++ workload. See [Requirements](#requirements). |
+| Cloned with `git` | **Visual Studio 2022** with the C++ workload to build the GUI, and/or **Python 3.9+** for the command line. The `.exe` and the prebuilt DLL are not in the repo. |
 
 There are **no pip packages.** Every script here uses only the Python standard
-library, so `pip install -r requirements.txt` is a deliberate no-op. Nothing
-registers a service, a driver, or a shell extension.
+library, so `pip install -r requirements.txt` is a deliberate no-op. The GUI
+itself is native C++ with no third-party library at all. Nothing registers a
+service, a driver, or a shell extension.
 
-### A note on Python and tkinter
+### A note on Python
 
-The GUI needs **tkinter**. The python.org Windows installer includes it. The
-**Microsoft Store** version of Python does **not**, and neither does the
-embeddable zip. If you see `No module named 'tkinter'`, that is why — install
-Python from [python.org](https://www.python.org/downloads/windows/) instead.
-
-You do not need the GUI at all. The command line has no tkinter dependency:
+The GUI does not use Python at all. You only need Python for the command line
+interface and the helper scripts, and those need nothing beyond the standard
+library.
 
 ```bat
 cd ui
@@ -141,15 +140,18 @@ python -m modengine_fixer.cli status --game-dir "C:\Games\Sekiro"
 > not stored in git, so a `git clone` will not contain them. Use a Release ZIP
 > if you want the no-setup path.
 
-**Otherwise** you need **Python 3.9+ with tkinter** (see
-[Requirements](#requirements)) and the **game folder**:
+**Otherwise** clone the repo and build the app yourself (see
+[Building the .exe yourself](#building-the-exe-yourself)):
 
 ```bat
 git clone https://github.com/YOUR-USERNAME/Sekiro-ModEngine-1.6-Fix
 cd Sekiro-ModEngine-1.6-Fix
-
-python ui\fixer.py
+src\fixer_gui\build.cmd --publish
 ```
+
+That needs Visual Studio 2022 Build Tools and a Windows SDK, but no Python. A
+plain `git clone` also gives you the command line interface, which only needs
+Python 3.9+ (see [Requirements](#requirements)).
 
 The GUI does the rest: it finds your game folder, builds the DLL, backs up the
 old one, installs it, launches the game, and shows you which mods loaded.
@@ -179,145 +181,113 @@ requirement is Visual Studio 2022 Build Tools plus a Windows SDK.
 
 ## Using the GUI
 
-If you are not comfortable with command lines, this is the whole thing in
-three tabs. It does the fiddly parts for you: finding the game folder, building
-the DLL, backing up whatever was there, and telling you whether your mods
-actually loaded.
+`ModEngineFixer.exe` in the repository root is the app. It is a single
+self-contained native binary: no Python, no runtime to install, and the icon
+and wallpaper are embedded inside it. Just double-click it.
+
+It does the fiddly parts for you: finding the game folder, building the DLL,
+backing up whatever was there, and telling you whether your mods actually
+loaded.
 
 ### Before you start
 
-The `.exe` needs nothing installed. If you are running the Python version
-instead you need **Python 3.9 or newer**. Check by opening a command prompt and typing
-`python --version`. If that fails, install Python from
-[python.org](https://www.python.org/downloads/windows/) and tick **"Add Python
-to PATH"** during setup.
+The `.exe` needs nothing installed.
 
 You do **not** need Visual Studio unless you press *Build*. See
 [Requirements](#requirements) below.
 
+### Command line switches
+
+Both are optional:
+
+| Switch | Effect |
+| --- | --- |
+| `--game "<dir>"` | Start pointed at a specific Sekiro folder instead of auto-detecting. |
+| `--shot "<file.bmp>"` | Render one frame to a BMP and exit. Used for automated checks. |
+
 ### Starting it
 
-Double-click `ui\fixer.py`. If Windows shows a blank window or asks which
-program to use, right-click it and choose **Run with Python**, or open a
-command prompt in the repo folder and run:
+Double-click `ModEngineFixer.exe` in the repository root. Keep it there — the
+app locates `src\` and `mods\` relative to its own folder.
 
-```bat
-python ui\fixer.py
-```
+### The status cards
 
-A window titled **Mod Engine 1.6 Fixer** appears, with three tabs across the top.
+Four cards across the top of the panel summarise the current state. Each has a
+coloured pip: **jade** means good, **gold** means needs attention, **rust** means
+broken, **red** means a real error.
 
-### Tab 1 — Setup
-
-This is where everything happens. It has three sections, top to bottom.
-
-**The game folder box.** Mod Engine reads your mods relative to this folder, so
-it matters. The app guesses it on startup. If the status panel below says
-`No sekiro.exe here`, click **Browse...** and pick the folder that contains
-`sekiro.exe` — usually
-`C:\Program Files (x86)\Steam\steamapps\common\Sekiro`. Press **Refresh**
-afterwards.
-
-**The status panel.** It tells you what it found:
-
-```
-[+] sekiro.exe      C:\Games\Sekiro\sekiro.exe
-    size            67,799,112 bytes
-    version         unknown / newer than 1.03  ->  too new for stock Mod Engine (this is what we fix)
-[+] dinput8.dll     217,600 bytes  (PATCHED BUILD)
-[+] backup          dinput8.dll.modengine-0.1.16.orig.bak
-[i] mods folder    C:\Games\Sekiro\mods
-
-[+] [ModEngine] AOB scan hooking archive function at 00000001401C76D0
-[i] archives       10 of 37 served
-```
-
-What each line means:
-
-| Line | Meaning |
-|---|---|
-| `PATCHED BUILD` | Correct. Mod loading is working. |
-| `stock 0.1.16?` | Wrong DLL — the one that silently does nothing. Rebuild and reinstall. |
-| `not installed` | Normal before your first install. |
-| `AOB scan hooking archive function at ...` | The hook installed. This is the line that proves it works. |
-| `10 of 37 served` | Your last session loaded 10 of 37 mod files. |
-| `too new for stock Mod Engine` | Expected on 1.6. That is the whole point of this project. |
-| `[!]` warning | Something needs attention — the text says what. |
-
-**The three buttons**, in the order you should press them:
-
-| Button | What it does | Press it |
+| Card | Good | What it means |
 |---|---|---|
-| **Build patched DLL** | Compiles the source. Needs Visual Studio. Output appears in the box below. | Once, the first time |
-| **Install / repair** | Backs up any existing `dinput8.dll` to `dinput8.dll.modengine-0.1.16.orig.bak`, copies the patched one in, and creates `modengine.ini` and `mods\` if missing. | Once, then again any time you want to repair |
-| **Play game** | Starts `sekiro.exe` with the right working directory. | Every time you want to play |
+| `GAME BUILD` | jade — a known version | Which `sekiro.exe` you have. `too new for 1.03` is expected on 1.6; that is the whole point of this project. |
+| `DINPUT8.DLL` | jade — `patched` | The Mod Engine shim is installed. `stock` or `not installed` means mods will not load. |
+| `MOD ARCHIVES` | gold — `0 of 0` | How many mod files are in your `mods\` folder. |
+| `LOADER` | jade — `hooked` | The last session's `modengine_load.log` shows the AOB hook fired. This is the line that proves it works. |
 
-**Build tools.** The bar along the bottom of the window always tells you
-whether you can build:
-
-```
-Build tools: Ready - MSVC 14.44.35207, SDK 10.0.26100.0
-```
-
-If it says `Missing: ...`, *Build* will not work. Either follow the
-[requirements](#requirements) section to install Visual Studio, or download a
-prebuilt `dinput8.dll` from the Releases page and use **Install / repair**
-after dropping it in.
-
-Building takes 10 to 60 seconds. The buttons grey out while it runs, and the
-compiler output streams into the box at the bottom, so you can see if anything
-goes wrong.
-
-### Tab 2 — Mod report
-
-This is the payoff. After you have played for a few minutes and closed the
-game, click **Refresh report**.
+Under the cards, detail lines spell out anything wrong, plus the mod-archive
+summary from the last session:
 
 ```
-SERVED (your mods are loading)
-----------------------------------------------------------
-  + parts/fc_m_0200.partsbnd.dcx
-  + msg/engus/menu.msgbnd.dcx
-  + menu/hi/menu_load_00008.tpf.dcx
+Mod Engine hooked. 10 of 37 archive(s) served, 27 not loaded
 ```
 
-Anything under **SERVED** was actually loaded out of your `mods\` folder.
-
-Under **NOT REQUESTED YET** are files the game has not asked for. **This is
-normal and not a problem.** It only loads what it needs:
+`27 not loaded` is **normal and not a problem.** The game only loads archives as
+it needs them:
 
 - `menu\hi\menu_load_*.tpf.dcx` load as you open those specific screens
 - files under `msg\<language>\` load only if you select that language in game
   options — the other 12 folders stay untouched otherwise
 - character model archives load the first time you meet that character
 
-So play further and refresh. The served list should grow. If it is stuck at 0
-while the game has clearly been running, go back to Tab 1 and check the status
-panel.
+So play further and press **Refresh**. The number should grow.
 
-### Tab 3 — Help
+### The game folder
 
-A built-in copy of the instructions, including how to install the build tools
-if *Build* refuses to work. Useful if you are handing this to someone else and
-they do not have the repo docs open.
+Mod Engine reads your mods relative to this folder, so it matters. The app
+guesses it on startup. If the `GAME BUILD` card says the folder is wrong, press
+**Browse** and pick the one containing `sekiro.exe` — usually
+`C:\Program Files (x86)\Steam\steamapps\common\Sekiro`. Press **Refresh**
+afterwards.
 
-### Buttons in the bottom right
+### The buttons
 
-- **Open game folder** — opens Explorer at your game directory
-- **Docs** — opens the `docs\` folder with the full troubleshooting guide
+| Button | What it does | Press it |
+|---|---|---|
+| **Build DLL** | Compiles the source. Needs Visual Studio. Output streams into the log panel. | Once, the first time |
+| **Install / Repair** | Backs up any existing `dinput8.dll` to `dinput8.dll.modengine-0.1.16.orig.bak`, copies the patched one in, and creates `modengine.ini` and `mods\` if missing. | Once, then again any time you want to repair |
+| **Play Sekiro** | Starts `sekiro.exe` with the right working directory. | Every time you want to play |
+
+Buttons grey out when they cannot run — *Build DLL* until the toolchain is
+ready, *Install / Repair* and *Play Sekiro* until a game folder is found.
+**Clear** empties the log panel.
+
+**Build tools.** A line near the top always tells you whether you can build:
+
+```
+Toolchain: Ready - MSVC 14.44.35207, SDK 10.0.26100.0
+```
+
+If it says the toolchain is missing, *Build DLL* will not work. Either follow the
+[requirements](#requirements) section to install Visual Studio, or download a
+prebuilt `dinput8.dll` from the Releases page and use **Install / Repair** after
+dropping it in.
+
+Building takes 10 to 60 seconds. The buttons grey out while it runs, and the
+compiler output streams into the panel at the bottom, so you can see if anything
+goes wrong.
 
 ### Typical first run, start to finish
 
-1. **Browse...** to your Sekiro folder, press **Refresh**
-2. **Build patched DLL** — wait for the success dialog
-3. **Install / repair** — press **Play game** when it confirms
+1. **Browse** to your Sekiro folder, press **Refresh**
+2. **Build DLL** — wait for the log to say it succeeded
+3. **Install / Repair** — press **Play Sekiro** when it confirms
 4. Play for a few minutes, close the game
-5. **Mod report** tab → **Refresh report** → confirm files appear under SERVED
+5. Press **Refresh** — confirm the `LOADER` card turns jade and the
+   `served` count starts climbing
 6. Done. The game folder now has everything; you can launch Sekiro normally
    from Steam or a desktop shortcut from now on
 
 > **One caveat:** if you launch the game from a desktop shortcut whose "Start in"
-> folder is not the Sekiro directory, your mods will not load. The *Play game*
+> folder is not the Sekiro directory, your mods will not load. The *Play Sekiro*
 > button exists precisely because it sets that for you. If you prefer a
 > shortcut, set its "Start in" to the game folder.
 
@@ -384,6 +354,22 @@ The four things worth grepping for:
 | `[OVERRIDE OK ]` | A mod file was served to the game. |
 | `[CRASH]` | An unhandled exception was caught. Please report it. |
 
+### No console window
+
+This build does **not** open a black console window when the game starts.
+Sekiro is a GUI application, so the stock behaviour of calling `AllocConsole()`
+just puts a stray window in front of the game and leaves it there for the whole
+session. Here the log file is written unconditionally and nothing is echoed
+unless you ask for it:
+
+| Key in `[debug]` | Default | Effect |
+|---|---|---|
+| `showDebugLog` | `1` | How much detail goes in the log file. |
+| `showConsole` | `0` | Set to `1` to get the old console window back. |
+
+The GUI summarises this file after each run. To watch the console's contents
+while the game is running, set `showConsole=1` and leave it on.
+
 ---
 
 ## Building from source
@@ -400,9 +386,9 @@ If the maintainers have attached a `dinput8.dll` to the
 2. Copy it into your Sekiro folder, overwriting `dinput8.dll`
 3. Back up the original first — rename it to
    `dinput8.dll.modengine-0.1.16.orig.bak`
-4. Play. Check the **Mod report** tab of the GUI to confirm
+4. Play. Press **Refresh** in the GUI to confirm
 
-The GUI's **Install / repair** button does steps 2 and 3 for you if you place
+The GUI's **Install / Repair** button does steps 2 and 3 for you if you place
 the downloaded file at `src\build\dinput8_patched.dll`.
 
 ### Requirements
@@ -470,7 +456,8 @@ msbuild DS3ModEngine.sln /p:Configuration=Release /p:Platform=x64 ^
 ├── NOTICE                     <- upstream authorship and licensing
 ├── LICENSE                    <- MIT, for this repo's original work only
 ├── ModEngineFixer.exe         <- double-click this (no Python needed)
-├── build_exe.cmd              <- rebuilds that .exe from source
+├── background.jpg             <- wallpaper, embedded into the .exe
+├── sekrio_ico.ico             <- app icon, embedded into the .exe
 ├── docs/
 │   ├── UI_GUIDE.md            <- full button-by-button guide
 │   ├── ROOT_CAUSE.md          <- why the stock DLL does nothing, with evidence
@@ -478,7 +465,16 @@ msbuild DS3ModEngine.sln /p:Configuration=Release /p:Platform=x64 ^
 │   └── TROUBLESHOOTING.md     <- symptom -> cause -> fix
 ├── patches/
 │   └── 0001-allow-sekiro-1.6.patch
-├── src/                       <- patched Mod Engine (see NOTICE)
+├── src/                       <- all C++ lives here
+│   ├── build.cmd              <- rebuilds dinput8_patched.dll (the hook)
+│   └── fixer_gui/             <- the native Fixer GUI
+│       ├── build.cmd          <- rebuilds ModEngineFixer.exe
+│       ├── main.cpp           <- window, layout, input, threading
+│       ├── core.h / core.cpp  <- the logic, ported from core.py
+│       ├── d2d.h  / d2d.cpp   <- Direct2D / DirectWrite / WIC rendering
+│       ├── theme.h            <- the Sekiro palette
+│       ├── app.rc             <- embeds the icon, wallpaper and manifest
+│       └── app.manifest       <- declares PerMonitorV2 DPI awareness
 ├── in_gameadd/                <- helpers you run from the game folder
 │   ├── mod_report.py          <- served vs available .dcx diff
 │   ├── launch_sekiro.py       <- launches the game with the right CWD
@@ -487,10 +483,9 @@ msbuild DS3ModEngine.sln /p:Configuration=Release /p:Platform=x64 ^
 │   ├── check_mods.py          <- runtime diagnostic (modules, console capture)
 │   └── probe_steamhook.py     <- proves whether SteamAPI_Init is hooked
 └── ui/
-    ├── fixer.py               <- the GUI source, run this if no .exe
-    └── modengine_fixer/       <- its internals
-        ├── core.py            <- all the logic, no tkinter
-        ├── cli.py             <- same operations, scriptable
+    └── modengine_fixer/       <- the same logic in Python, for the CLI
+        ├── core.py            <- all the logic, no GUI
+        ├── cli.py             <- scriptable interface to it
         └── __init__.py
 ```
 
@@ -519,10 +514,33 @@ python tools\probe_steamhook.py  --game-dir "C:\Games\Sekiro"
 
 ### Building the .exe yourself
 
-`ModEngineFixer.exe` is a PyInstaller build. To rebuild it after changing the
-GUI, run `build_exe.cmd` from a normal user terminal. It installs PyInstaller
-and writes the `.exe` to the repo root, where it must stay — the app locates
-`src\`, `docs\` and `in_gameadd\` relative to its own position.
+`ModEngineFixer.exe` is a native C++ binary built with Visual Studio 2022 Build
+Tools (C++ workload) and a Windows 10/11 SDK. There is no third-party library
+and no Python involved.
+
+```bat
+cd src\fixer_gui
+build.cmd
+```
+
+That leaves the binary at `src\fixer_gui\ModEngineFixer.exe`. It works from
+there, but the usual place to keep it is the repo root, where it finds `src\`
+and `docs\` relative to itself. To build and put it there in one step:
+
+```bat
+cd src\fixer_gui
+build.cmd --publish
+```
+
+`--publish` is deliberately opt-in. A plain `build.cmd` never touches the
+`ModEngineFixer.exe` already sitting in the repo root, so you cannot clobber a
+working copy with an unverified build. Close any running copy first — Windows
+locks the file while it is open and the publish step will fail loudly.
+
+The window sizes itself from the monitor it opens on, in DIPs, and is capped to
+the work area, so it never opens partially off-screen or under the taskbar. The
+exe's manifest declares PerMonitorV2 DPI awareness, so the UI is correct at
+125%, 150% and 175% scaling rather than being drawn at 1:1.
 
 ---
 

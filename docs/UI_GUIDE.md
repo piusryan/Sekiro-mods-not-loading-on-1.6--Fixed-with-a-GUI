@@ -36,39 +36,55 @@ Pick whichever applies:
 | Situation | How to start |
 |---|---|
 | You have the `.exe` | Double-click **`ModEngineFixer.exe`** |
-| You have Python | Open a prompt in the repo folder and run `python ui\fixer.py` |
-| You want the command line | See [section 9](#9-the-command-line-version) |
+| You have the repo and VS Build Tools | `src\fixer_gui\build.cmd --publish`, then double-click it |
+| You want the command line | See [section 7](#7-the-command-line-version) |
 
-A window titled **Mod Engine 1.6 Fixer** opens, with three tabs: `1. Setup`,
-`2. Mod report`, `3. Help`.
+A window titled **Mod Engine 1.6 Fixer** opens, showing four status cards, the
+action buttons, and a log panel down the bottom.
 
-> The `.exe` must stay next to the `src\`, `docs\` and `in_gameadd\` folders.
+> The `.exe` must stay next to the `src\` and `docs\` folders.
 > It finds them relative to its own location, so keep the whole folder
 > together. Moving only the `.exe` elsewhere breaks it.
 
-### The window footer
+The window picks its own size from the monitor it opens on and caps itself to
+that monitor's work area, so it never opens half off-screen or tucked under the
+taskbar. It is also DPI-aware: at 125%, 150% or 175% display scaling the text and
+buttons are drawn at the size Windows reports, not squashed to 1:1. Resize it
+freely — the layout reflows, and the minimum size is small enough to fit a
+laptop screen.
 
-The thin strip along the bottom is always visible, on every tab:
+### Command line switches
+
+| Switch | Effect |
+|---|---|
+| `--game "<dir>"` | Start pointed at a specific Sekiro folder instead of auto-detecting. |
+| `--shot "<file.bmp>"` | Render one frame to a BMP and exit. Used for automated checks. |
+
+### The toolchain line
+
+A line near the top always tells you whether you can build:
 
 ```
-Build tools: Ready - MSVC 14.44.35207, SDK 10.0.26100.0
+Toolchain: Ready - MSVC 14.44.35207, SDK 10.0.26100.0
 ```
 
 | Message | Meaning |
 |---|---|
 | `Ready - MSVC ..., SDK ...` | Build will work. |
-| `Missing: ...` | Build will **not** work. Either install the tools ([section 7](#7-build-tools)) or grab a prebuilt DLL. |
+| `Missing: ...` | Build will **not** work. Either install the tools ([section 6](#6-build-tools)) or grab a prebuilt DLL. |
 
 ---
 
-## 3. Tab 1 — Setup
+## 3. The main panel
 
-Where all the actual work happens. Three areas, top to bottom.
+Everything lives on one screen. Top to bottom: header, game folder row, four
+status cards, detail lines, the action buttons, then the log.
 
 ### 3.1 The game folder row
 
 ```
-Game folder: [ C:\Games\Sekiro                          ] [Browse...] [Refresh]
+GAME FOLDER
+C:\Games\Sekiro                                    [Browse] [Refresh]
 ```
 
 Mod Engine resolves your mods relative to this folder, so it has to be right.
@@ -80,146 +96,44 @@ wrong, so check it.
 
 | Button | What it does |
 |---|---|
-| **Browse...** | Opens a folder picker. Select the folder containing `sekiro.exe`. Re-runs the status check immediately. |
-| **Refresh** | Re-reads the folder and rebuilds the status panel. Use after copying mods in or changing things outside the app. |
+| **Browse** | Opens a folder picker. Select the folder containing `sekiro.exe`. Re-runs the status check immediately. |
+| **Refresh** | Re-reads the folder and rebuilds everything below. Use after copying mods in or changing things outside the app. |
 
-You can also just paste a path into the box and press Refresh.
+Long paths are elided in the middle, so the drive and the folder name both stay
+visible.
 
-### 3.2 The status panel
+### 3.2 The status cards
 
-The large grey text area. It is the main thing to read.
+Four cards, each with a coloured pip.
 
-```
-[+] sekiro.exe      C:\Games\Sekiro\sekiro.exe
-    size            67,799,112 bytes
-    version         unknown / newer than 1.03  ->  too new for stock Mod Engine (this is what we fix)
-[+] dinput8.dll     217,600 bytes  (PATCHED BUILD)
-[+] backup          dinput8.dll.modengine-0.1.16.orig.bak
-[i] mods folder    C:\Games\Sekiro\mods
-
-[+] [ModEngine] AOB scan hooking archive function at 00000001401C76D0
-[i] archives       10 of 37 served
-
-Looks good. Play the game and check the Mod report tab.
-```
-
-**Line by line:**
-
-| Line | Means |
+| Pip colour | Means |
 |---|---|
-| `[+] sekiro.exe` | Found the executable. Good. |
-| `size 67,799,112` | Byte size. Only useful for spotting a wrong/partial file. |
-| `version ... too new for stock Mod Engine` | **Expected on 1.6.** This is the bug being fixed. Not an error. |
-| `dinput8.dll (PATCHED BUILD)` | **Correct.** The working version is installed. |
-| `dinput8.dll (stock 0.1.16?)` | **Wrong.** The useless version. Rebuild and reinstall. |
-| `[-] dinput8.dll not installed` | Normal before your first install. |
-| `[+] backup ...orig.bak` | Your original DLL is saved. You can always undo. |
-| `[i] mods folder ...` | Where your mods were found. |
-| `AOB scan hooking archive function at 0x1401C76D0` | **The hook installed.** This single line is the proof the fix works. |
-| `archives 10 of 37 served` | Your last session loaded 10 of the 37 mod files. |
-| `[!] ...` | A warning. The text says what to do. |
-| `Looks good.` | Everything checks out. Go play. |
+| **jade** (green) | Good. |
+| **gold** | Needs attention, not broken. |
+| **rust** (orange) | Broken. |
+| **red** | A real error. The detail line below says what. |
 
-The `unknown` in the version line is normal — stock Mod Engine never reads the
+| Card | Good value | Meaning |
+|---|---|---|
+| `GAME BUILD` | a known version | Which `sekiro.exe` you have. `too new for 1.03` is **expected on 1.6** — that is the whole point of this project, not an error. |
+| `DINPUT8.DLL` | `patched` | The Mod Engine shim is installed. `stock` or `not installed` means mods will not load. |
+| `MOD ARCHIVES` | a count like `0 of 0` | How many mod files are in your `mods\` folder. Stays gold until you add some. |
+| `LOADER` | `hooked` | The last session's `modengine_load.log` shows the AOB hook fired. **This is the proof the fix works.** |
+
+The `unknown` in the game version is normal — stock Mod Engine never reads the
 1.6 version block. That is the whole point of `PATCHES.md`.
 
-### 3.3 The three action buttons
+### 3.3 The detail lines
 
-Hover any of them for a tooltip. They grey out while a build is running.
-
-#### Build patched DLL
-
-Compiles `src\build.cmd` and produces `src\build\dinput8_patched.dll`.
-
-- **Needs:** Visual Studio 2022 Build Tools. Check the footer first.
-- **How long:** 10 to 60 seconds. Compiler output streams into the box below.
-- **When:** once. Only if you changed the source, or if there is no prebuilt
-  binary for you.
-- **After:** press **Install / repair**.
-
-If the build fails you get a `Build failed` dialog and the compiler output
-stays in the lower box — read the last lines, it usually names the missing
-component.
-
-#### Install / repair
-
-Copies the built DLL into your game folder and makes sure the config exists.
-
-What it actually does:
-
-1. Checks `sekiro.exe` is really there. If not you get a `Wrong folder` dialog.
-2. If `dinput8.dll` exists, renames it to
-   `dinput8.dll.modengine-0.1.16.orig.bak`. Only overwrites an older backup,
-   so your genuine original is never lost.
-3. Copies `dinput8_patched.dll` in as `dinput8.dll`.
-4. Creates `modengine.ini` pointing at `mods\` if it is missing.
-5. Creates an empty `mods\` folder if it is missing.
-
-- **Needs:** a prior successful build. If you press it with no build present
-  it offers to build first.
-- **When:** once, then any time you want to repair a bad install.
-- **Safe to re-run** — it is idempotent.
-
-#### Play game
-
-Starts `sekiro.exe` with the correct working directory, then tells you to play
-a few minutes and check the report.
-
-- **Needs:** a valid game folder and an installed DLL.
-- **Why a button instead of your normal shortcut:** Mod Engine finds `mods\`
-  relative to the current working directory. A desktop shortcut or a
-  non-Steam launcher often sets that somewhere else, and the mods silently
-  fail to load. This button sets it correctly.
-- **After playing:** close the game, go to tab 2, press **Refresh report**.
-
-### 3.4 The build output box
-
-The small box under the buttons. Compiler output during a build. Read it when
-a build fails — it names the exact error.
-
----
-
-## 4. Tab 2 — Mod report
-
-The payoff. This is the evidence.
-
-After playing for a few minutes and closing the game, press **Refresh report**.
+Directly under the cards. They spell out anything wrong, plus what the game
+actually loaded last session:
 
 ```
-[ModEngine] AOB scan hooking archive function at 00000001401C76D0
-
-Available archives : 37
-Served last session : 10
-
-SERVED (your mods are loading)
-----------------------------------------------------------
-  + parts/fc_m_0200.partsbnd.dcx
-  + msg/engus/menu.msgbnd.dcx
-  + menu/hi/menu_load_00008.tpf.dcx
-
-NOT REQUESTED YET
-----------------------------------------------------------
-  . menu/ja/menu_load_00008.tpf.dcx
-  . parts/fc_c_0100.partsbnd.dcx
-  ...
-
-Not a problem. The game only requests the files it needs.
+Mod Engine hooked. 10 of 37 archive(s) served, 27 not loaded
 ```
 
-| Control | Does |
-|---|---|
-| **Refresh report** | Re-reads `modengine_load.log` from the game folder and re-renders this tab. |
-| The bold count on the right | `served / available`. Shown live on the tab. |
-
-### SERVED
-
-Files your `mods\` folder actually delivered. **This is the thing you want to
-see.** Each line is a mod that is working.
-
-### NOT REQUESTED YET
-
-Files the game has not asked for. **This is normal and not a problem.** The
-game only loads what it needs:
+`27 not loaded` is **normal and not a problem.** The game only requests the
+archives it needs:
 
 - `menu\<lang>\menu_load_*.tpf.dcx` load as you open those specific screens
 - everything under `msg\<language>\` loads **only** if you select that language
@@ -227,41 +141,129 @@ game only loads what it needs:
   forever, and that is correct
 - character model archives load the first time you meet that character
 
-So play further and refresh. The served list should grow. Expect roughly 10
-files on a normal short session out of the 37 present.
+So play further and press **Refresh**. The served count should grow. Expect
+roughly 10 files on a normal short session out of the 37 present.
+
+If the hook did not install, the line turns rust and quotes the problem from
+`modengine_load.log` instead.
+
+### 3.4 The action buttons
+
+| Button | Does |
+|---|---|
+| **Build DLL** | Compiles `src\build.cmd`, producing `src\build\dinput8_patched.dll`. Compiler output streams into the log panel. |
+| **Install / Repair** | Backs up any existing `dinput8.dll`, copies the patched one in, and creates `modengine.ini` and `mods\` if missing. |
+| **Play Sekiro** | Starts `sekiro.exe` with the correct working directory. |
+| **Clear** | Empties the log panel. |
+
+They grey out when they cannot run: **Build DLL** until the toolchain is ready,
+**Install / Repair** and **Play Sekiro** until a game folder is found. While a
+build runs, `game is running` style notes appear next to the action bar.
+
+#### Build DLL
+
+- **Needs:** Visual Studio 2022 Build Tools. Check the toolchain line first.
+- **How long:** 10 to 60 seconds.
+- **When:** once. Only if you changed the source, or if there is no prebuilt
+  binary for you.
+- **After:** press **Install / Repair**.
+
+If it fails you get a `Build failed` dialog and the compiler output stays in the
+log panel — read the last lines, it usually names the missing component.
+
+#### Install / Repair
+
+What it actually does:
+
+1. Checks `sekiro.exe` is really there. If not you get a `Wrong folder` dialog.
+2. If `dinput8.dll` exists, copies it to
+   `dinput8.dll.modengine-0.1.16.orig.bak`. Only creates that backup if one does
+   not already exist, so your genuine original is never lost.
+3. Copies `dinput8_patched.dll` in as `dinput8.dll`.
+4. Creates `modengine.ini` pointing at `mods\` if it is missing.
+5. Creates an empty `mods\` folder if it is missing.
+
+- **Needs:** a prior successful build. Without one it says
+  `DLL not built yet. Press Build first.`
+- **When:** once, then any time you want to repair a bad install.
+- **Safe to re-run** — it is idempotent.
+
+#### Play Sekiro
+
+- **Needs:** a valid game folder and an installed DLL.
+- **Why a button instead of your normal shortcut:** Mod Engine finds `mods\`
+  relative to the current working directory. A desktop shortcut or a non-Steam
+  launcher often sets that somewhere else, and the mods silently fail to load.
+  This button sets it correctly.
+- **No console window appears.** The log is tailed in the app instead. See
+  [No console window](#no-console-window).
+- **After playing:** close the game, then press **Refresh**.
+
+### 3.5 The log panel
+
+The large panel along the bottom. It holds the app's own messages, the build
+output, and install results. It scrolls; use the mouse wheel over it.
+
+Colour tells you what a line is: `>` for your own actions, `#` for headings,
+red if the line mentions an error.
+
+---
+
+## 4. Reading the load log
+
+`modengine_load.log` in your game folder is the raw evidence. The `LOADER` card
+and the detail line summarise it; the file itself looks like this:
+
+```
+[ModEngine] AOB scan hooking archive function at 00000001401C76D0
+[INVENTORY] Scanning override directory: C:\Games\Sekiro\mods
+[INVENTORY] 39 file(s) available for override.
+[OVERRIDE OK ] C:\Games\Sekiro\mods\parts\fc_m_0200.partsbnd.dcx
+             -> served as "data1:/parts/fc_m_0200.partsbnd.dcx" (156166889 bytes)
+```
+
+If you want the served-vs-available diff as a list rather than a count, use the
+helper script:
+
+```bat
+python in_gameadd\mod_report.py --game-dir "C:\Games\Sekiro"
+```
+
+### No console window
+
+The stock and earlier builds of this fix called `AllocConsole()` at startup
+whenever `showDebugLog=1`, which meant a black console window sat in front of
+the game for the whole session. It is gone. The log file is written either way.
+
+If you want the old behaviour back for debugging by hand, add this to
+`modengine.ini`:
+
+```ini
+[debug]
+showConsole=1
+```
+
+| Key in `[debug]` | Default | Effect |
+|---|---|---|
+| `showDebugLog` | `1` | How much detail goes in the log file. |
+| `showConsole` | `0` | Set to `1` to get a console window. |
 
 ### If served stays at 0
 
 Something is wrong. Check in this order:
 
-1. `dinput8.dll` says `PATCHED BUILD`? If it says `stock 0.1.16?`, reinstall.
-2. Does the `AOB scan hooking...` line appear? If not, the hook never
-   installed — the DLL is being clobbered again.
-3. Did you launch via **Play game** rather than a shortcut?
-4. Is `mods\` in the folder the status panel names?
+1. Does the `DINPUT8.DLL` card say `patched`? If it says `stock`, reinstall.
+2. Does `LOADER` say `hooked`? If not, the hook never installed — the DLL is
+   being clobbered again.
+3. Did you launch via **Play Sekiro** rather than a shortcut?
+4. Is `mods\` in the folder the game folder row names?
 
 ---
 
-## 5. Tab 3 — Help
+## 5. Build tools
 
-A built-in copy of these instructions, so the tool is self-documenting even
-if you hand it to someone without the repo. Same content, condensed.
-
----
-
-## 6. The two footer buttons
-
-| Button | Does |
-|---|---|
-| **Open game folder** | Opens Explorer at your game directory |
-| **Docs** | Opens the `docs\` folder, including this guide |
-
----
-
-## 7. Build tools
-
-Only needed for **Build patched DLL**. If you got a prebuilt DLL from the
-Releases page, you never need this.
+Only needed for **Build DLL**. If you got a prebuilt DLL from the Releases page,
+you never need this.
 
 Install:
 
@@ -272,19 +274,20 @@ Install:
    - **Windows 11 SDK** (or Windows 10 SDK)
 4. Install and restart the Fixer
 
-The footer should then read `Build tools: Ready`.
+The toolchain line should then read `Ready - MSVC ..., SDK ...`.
 
 ---
 
-## 8. Typical first run
+## 6. Typical first run
 
-1. **Browse...** to the folder containing `sekiro.exe`, press **Refresh**
-2. Check the status panel shows `PATCHED BUILD`, or `not installed` if you
-   have not installed yet
-3. **Build patched DLL** — wait for `Build succeeded`
-4. **Install / repair** — press OK
-5. **Play game** — play for a few minutes, then close
-6. Tab **2. Mod report** → **Refresh report** — confirm files under SERVED
+1. **Browse** to the folder containing `sekiro.exe`, press **Refresh**
+2. Check the `DINPUT8.DLL` card says `patched`, or `not installed` if you have
+   not installed yet
+3. **Build DLL** — wait for it to report success
+4. **Install / Repair** — press OK
+5. **Play Sekiro** — play for a few minutes, then close the game
+6. Press **Refresh** — confirm the `LOADER` card is jade and the served count
+   is above zero
 7. Done. Launch Sekiro normally from Steam from now on
 
 Undo at any time: delete `dinput8.dll` and rename
@@ -292,7 +295,7 @@ Undo at any time: delete `dinput8.dll` and rename
 
 ---
 
-## 9. The command line version
+## 7. The command line version
 
 Everything the GUI does is available without it. Run from inside `ui\`:
 
@@ -310,7 +313,7 @@ order is rejected by the argument parser.
 
 ---
 
-## 10. The helper scripts
+## 8. The helper scripts
 
 Two folders of standalone scripts, for when you want proof without the GUI.
 
@@ -318,8 +321,8 @@ Two folders of standalone scripts, for when you want proof without the GUI.
 
 | Script | Does |
 |---|---|
-| `mod_report.py` | The same report as tab 2, from the command line. Also the source of the tab 2 data. |
-| `launch_sekiro.py` | Launches the game with the correct working directory. Same job as **Play game**. |
+| `mod_report.py` | The served-vs-available archive diff, from the command line. The same data behind the `LOADER` card. |
+| `launch_sekiro.py` | Launches the game with the correct working directory. Same job as **Play Sekiro**. |
 
 ```bat
 cd "C:\Games\Sekiro"
@@ -345,18 +348,18 @@ Both support `SEKIRO_DIR` instead of `--game-dir` if you prefer.
 
 ---
 
-## 11. If something goes wrong
+## 9. If something goes wrong
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `Wrong folder` on install | No `sekiro.exe` in the path | **Browse...** to the right folder |
-| `Build tools: Missing` | No MSVC | [Section 7](#7-build-tools), or use a prebuilt DLL |
-| `Build failed` | Compiler error | Read the build output box, bottom lines |
-| Report shows 0 served, no hook line | Stock DLL installed, or hook clobbered | Reinstall, then check `dinput8.dll` says `PATCHED BUILD` |
-| Mods work in-game but not via shortcut | Wrong working directory | Use **Play game**, or set the shortcut's "Start in" |
+| `Wrong folder` on install | No `sekiro.exe` in the path | **Browse** to the right folder |
+| Toolchain line says `Missing` | No MSVC | [Section 5](#5-build-tools), or use a prebuilt DLL |
+| `Build failed` | Compiler error | Read the log panel, bottom lines |
+| `LOADER` says `not hooked`, 0 served | Stock DLL installed, or hook clobbered | Reinstall, then check `DINPUT8.DLL` says `patched` |
+| Mods work in-game but not via shortcut | Wrong working directory | Use **Play Sekiro**, or set the shortcut's "Start in" |
 | Nothing happens at all | Windows is blocking the `.exe` | Right-click → Properties → tick **Unblock** → Apply |
-| App closes instantly | Crash | A `fixer_crash.log` appears next to the `.exe` with the details |
-| `Could not launch` | Game folder invalid, or the game is already running | Re-**Browse...** and **Refresh** |
+| SmartScreen warning | Unsigned binary | *More info* → *Run anyway* |
+| `Could not launch` | Game folder invalid, or the game is already running | Re-**Browse** and **Refresh** |
 
 More in [TROUBLESHOOTING.md](TROUBLESHOOTING.md). The underlying cause of the
 original bug is documented in [ROOT_CAUSE.md](ROOT_CAUSE.md).
