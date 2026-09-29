@@ -1,0 +1,76 @@
+NOTICE
+======
+
+This project is a third-party fix for Mod Engine, originally created by
+katalash. It is not affiliated with, endorsed by, or supported by FromSoftware,
+or by katalash.
+
+
+Up Mod Engine
+-------------
+
+    Project:  https://github.com/katalash/ModEngine
+    Author:   katalash
+    Releases: https://www.nexusmods.com/sekiro/mods/6
+    Upstream commit this fix was based on:
+              42d6b9d10903018ff9b15d3d15a911a3e86f6e3d  (2020-03-04)
+
+Everything under `src/` is Mod Engine, written by katalash, with the
+modifications described in `docs/PATCHES.md` applied on top.
+
+    Mod Engine is provided as-is. Modifications for Sekiro 1.6 support,
+    build tooling, diagnostics and documentation were contributed by this
+    project's maintainers.
+
+    Mod Engine is free for personal use. Do not redistribute it commercially
+    without the author's permission.
+
+The upstream repository contains NO LICENSE file. Because of that, the
+redistribution terms for the `src/` tree are undefined. This repository does
+not grant you any rights to katalash's code beyond what he has already made
+public on GitHub and Nexus Mods.
+
+If you intend to publish this publicly, please:
+
+  1. Open an issue at https://github.com/katalash/ModEngine asking whether
+     redistributed, patched builds are acceptable, and
+  2. Add his answer (or a link to it) here in NOTICE.
+
+The MIT license in this repository covers only the original contributions
+listed in LICENSE, not the `src/` tree.
+
+
+Bundled third-party code
+------------------------
+
+src/StackWalker/
+    StackWalker by Jochen Kalmbach (djohls). Bundled licence file is
+    BSD-2-Clause, Copyright (c) 2005 - 2019.
+    See src/StackWalker/LICENSE for the full terms.
+
+src/MinHook/
+    MinHook by Tsuda Kageyu, used under a 2-clause BSD licence.
+    NOTE: the upstream clone did NOT vendor MinHook's LICENSE.txt - only the
+    sources and a .gitkeep placeholder are present. If you redistribute this
+    tree, fetch the licence text from https://github.com/TsudaKageyu/minhook
+    and add it here. The git submodule declaration also means a plain
+    `git clone` of katalash/ModEngine without --recursive leaves this
+    directory empty; use --recursive, or just use the files already in src/.
+
+src/ImGui/
+    Dear ImGui by Omar Cornut, MIT licensed. Not required by the 1.6 fix
+    build; it is retained only so the full upstream tree stays intact. The
+    upstream tree likewise ships no third-party licence text for it.
+
+src/LeoSpecial/
+    Not part of upstream. Added by this project as a minimal stub because
+    ModLoader.cpp includes LeoSpecial/LeoSpecial.h but upstream never vendored
+    the library. Every use of it in upstream is commented out or dead code.
+
+
+Your game files
+---------------
+
+This repository deliberately excludes all game data, archives (.dcx, .tpf,
+.bnd), and mod files. Sekiro: Shadows Die Twice is developed and published by
+FromSoftware. Get the game legally; we do not distribute any part of it.

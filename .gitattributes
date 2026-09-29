@@ -1,2 +1,19 @@
-# Auto detect text files and perform LF normalization
+# Normalize line endings so the repo diffs cleanly on Windows and Linux.
 * text=auto
+
+*.cpp   text
+*.h     text
+*.c     text
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+*.py    text eol=lf
+*.md    text eol=lf
+*.ini   text eol=crlf
+*.def   text
+*.sln   text eol=crlf
+*.vcxproj text eol=crlf
+*.filters text eol=crlf
+
+# Upstream committed some headers as UTF-16; treat them as binary so git does
+# not try to normalize them. Our replacements are plain ASCII.
+src/StackWalker/* binary

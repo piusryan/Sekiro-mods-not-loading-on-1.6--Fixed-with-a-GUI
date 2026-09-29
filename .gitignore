@@ -1,0 +1,44 @@
+# ---- build output ----
+src/build/
+*.obj
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.idb
+
+# ---- build products (users build these, don't commit binaries) ----
+dinput8.dll
+dinput8.dll.modengine-*.bak
+
+# ---- runtime logs (can be 1-2 MB per run) ----
+modengine_load.log
+modengine_console.log
+modenginecrash.log
+*.exp.log
+capture.log
+*.log
+
+# ---- user game data, never commit ----
+mods/
+*.dcx
+*.tpf
+*.bnd
+savedata/
+steam_emu.ini
+
+# ---- python ----
+__pycache__/
+*.pyc
+
+# ---- PyInstaller (.exe is built locally, or attached to a Release) ----
+build_exe/
+ModEngineFixer.exe
+fixer_crash.log
+
+# ---- editors / OS ----
+.vs/
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

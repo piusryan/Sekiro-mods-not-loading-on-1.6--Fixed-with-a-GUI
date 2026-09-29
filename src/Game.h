@@ -1,0 +1,12 @@
+#pragma once
+
+typedef enum
+{
+	GAME_UNKNOWN,
+	GAME_DARKSOULS_REMASTERED,
+	GAME_DARKSOULS_2_SOTFS,
+	GAME_DARKSOULS_3,
+	GAME_SEKIRO,
+} DSGame;
+
+DSGame GetGameType();
