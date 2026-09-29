@@ -74,6 +74,16 @@ void gfxResize(Gfx& g, UINT w, UINT h) {
     if (g.rt) g.rt->Resize(D2D1::SizeU(g.pxW, g.pxH));
 }
 
+void gfxSetDpi(Gfx& g, float dpi) {
+    // D2D turns DIPs into pixels using the render target's DPI. When the window
+    // moves to a monitor with a different scaling factor the target has to be
+    // told, or the whole UI keeps the old scale.
+    if (dpi <= 0.f) return;
+    g.dpi   = dpi;
+    g.scale = dpi / 96.f;
+    if (g.rt) g.rt->SetDpi(dpi, dpi);
+}
+
 // ---------------------------------------------------------------------------
 // Text formats
 // ---------------------------------------------------------------------------
@@ -94,22 +104,28 @@ static IDWriteTextFormat* makeFmt(IDWriteFactory* dw,
 
 bool fmtCreate(Gfx& g, Fmt& f) {
     auto* dw = g.dw.Get();
-    const float s = g.scale;
     bool ok = true;
     auto L = DWRITE_TEXT_ALIGNMENT_LEADING;
     auto C = DWRITE_TEXT_ALIGNMENT_CENTER;
     auto M = DWRITE_PARAGRAPH_ALIGNMENT_CENTER;
     auto T = DWRITE_PARAGRAPH_ALIGNMENT_NEAR;
 
+    // NOTE: sizes are design units (== DIPs at 100% zoom). They are deliberately
+    // NOT multiplied by g.scale: the render target's DPI already converts DIPs to
+    // pixels, and the widget pass only applies the user zoom on top. Scaling here
+    // as well made every string 1.25x/1.5x too big for its layout rect on a
+    // non-100% display, which is what pushed the header over the subtitle.
     auto set = [&](ComPtr<IDWriteTextFormat>& slot,
                    const wchar_t* fam, float sz, DWRITE_FONT_WEIGHT wt,
                    DWRITE_TEXT_ALIGNMENT ha, DWRITE_PARAGRAPH_ALIGNMENT va) {
-        slot.Attach(makeFmt(dw, fam, sz * s, wt, ha, va));
+        slot.Attach(makeFmt(dw, fam, sz, wt, ha, va));
         ok &= (slot != nullptr);
     };
 
     set(f.title,    L"Segoe UI", 20, DWRITE_FONT_WEIGHT_SEMI_BOLD,  L, T);
     set(f.subtitle, L"Segoe UI", 10, DWRITE_FONT_WEIGHT_NORMAL,     L, M);
+    set(f.titleC,   L"Segoe UI", 20, DWRITE_FONT_WEIGHT_SEMI_BOLD,  C, T);
+    set(f.subC,     L"Segoe UI", 10, DWRITE_FONT_WEIGHT_NORMAL,     C, M);
     set(f.label,    L"Segoe UI",  8, DWRITE_FONT_WEIGHT_SEMI_BOLD,  L, T);
     set(f.value,    L"Segoe UI", 13, DWRITE_FONT_WEIGHT_SEMI_BOLD,  L, T);
     set(f.btn,      L"Segoe UI", 11, DWRITE_FONT_WEIGHT_SEMI_BOLD,  C, M);
@@ -241,6 +257,46 @@ void fillRadial(Gfx& g, D2D1_RECT_F r, D2D1_POINT_2F centre,
 }
 
 // ---------------------------------------------------------------------------
+// Wallpaper – uniform "cover" fit, centred, clipped
+// ---------------------------------------------------------------------------
+void gfxDrawBackdrop(Gfx& g, D2D1_RECT_F target, D2D1_COLOR_F veil) {
+    if (target.right <= target.left || target.bottom <= target.top) return;
+
+    if (!g.bgBitmap) {
+        // No wallpaper decoded – fall back to the plain warm backdrop.
+        fillRadial(g, target, {target.left + 0.20f * (target.right - target.left),
+                               target.top  + 0.05f * (target.bottom - target.top)},
+                   1.10f * (target.right - target.left),
+                   1.20f * (target.bottom - target.top),
+                   pal::kBackdropTop, pal::kBackdropBot);
+        return;
+    }
+
+    const D2D1_SIZE_F img = g.bgBitmap->GetSize();   // source pixels
+    if (img.width <= 0.f || img.height <= 0.f) return;
+
+    const float k  = (g.scale > 0.f) ? g.scale : 1.f;   // DIP -> pixel
+    const float tw = target.right  - target.left;
+    const float th = target.bottom - target.top;
+
+    // "Cover": the smaller of the two ratios that still fills the whole target.
+    // Comparing in pixel space keeps the art at its natural crispness.
+    const float sc  = std::max((tw * k) / img.width, (th * k) / img.height);
+    const float dw  = (img.width  * sc) / k;            // back to DIPs
+    const float dh  = (img.height * sc) / k;
+    const float dx  = target.left + (tw - dw) * 0.5f;   // centred, never top-left
+    const float dy  = target.top  + (th - dh) * 0.5f;
+
+    g.rt->PushAxisAlignedClip(target, D2D1_ANTIALIAS_MODE_ALIASED);
+    g.rt->DrawBitmap(g.bgBitmap.Get(),
+                     D2D1_RECT_F{dx, dy, dx + dw, dy + dh}, 1.f,
+                     D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+    g.rt->PopAxisAlignedClip();
+
+    if (veil.a > 0.f) fillRect(g, target, veil);
+}
+
+// ---------------------------------------------------------------------------
 // Text
 // ---------------------------------------------------------------------------
 void drawText(Gfx& g, IDWriteTextFormat* fmt, D2D1_RECT_F r,
@@ -353,7 +409,7 @@ void drawCard(Gfx& g, const Card& c) {
     D2D1_COLOR_F lineC = pal::kGoldDark;
     fillRect(g, topLine, lineC);
 
-    // Status pip  (small rounded square, 7x7, coloured)
+    // Status pip  (small rounded square, 7x7 design units, coloured)
     D2D1_COLOR_F pipC;
     switch (c.colour) {
         case CardColour::Green: pipC = pal::kJade;  break;
@@ -361,7 +417,7 @@ void drawCard(Gfx& g, const Card& c) {
         case CardColour::Red:   pipC = pal::kRust;  break;
         default:                pipC = pal::kDim;   break;
     }
-    float pipSize = 7.f * g.scale;
+    float pipSize = 7.f;
     D2D1_RECT_F pip = {r.left+10, r.top+9, r.left+10+pipSize, r.top+9+pipSize};
     fillRounded(g, pip, pipC, 2.f);
 

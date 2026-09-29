@@ -473,7 +473,9 @@ msbuild DS3ModEngine.sln /p:Configuration=Release /p:Platform=x64 ^
 │       ├── core.h / core.cpp  <- the logic, ported from core.py
 │       ├── d2d.h  / d2d.cpp   <- Direct2D / DirectWrite / WIC rendering
 │       ├── theme.h            <- the Sekiro palette
-│       ├── app.rc             <- embeds the icon, wallpaper and manifest
+│       ├── fixer.rc           <- embeds the icon, wallpaper and manifest
+│       ├── resource.h         <- resource IDs (IDI_APP_ICON, IDB_BACKGROUND)
+│       ├── make_icon.py       <- rebuilds sekrio_ico.ico from sekiro.jpg
 │       └── app.manifest       <- declares PerMonitorV2 DPI awareness
 ├── in_gameadd/                <- helpers you run from the game folder
 │   ├── mod_report.py          <- served vs available .dcx diff

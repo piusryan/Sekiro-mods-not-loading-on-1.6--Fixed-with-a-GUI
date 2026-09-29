@@ -22,7 +22,7 @@ namespace pal {
     inline constexpr D2D1_COLOR_F kBgCard     = {0.115f, 0.098f, 0.075f, 0.88f};
     inline constexpr D2D1_COLOR_F kBgWell     = {0.060f, 0.050f, 0.038f, 0.92f};
     inline constexpr D2D1_COLOR_F kBgLog      = {0.030f, 0.025f, 0.018f, 0.93f};
-    inline constexpr D2D1_COLOR_F kVeil       = {0.020f, 0.016f, 0.010f, 0.62f};
+    inline constexpr D2D1_COLOR_F kVeil       = {0.020f, 0.016f, 0.010f, 0.55f};
 
     // Borders
     inline constexpr D2D1_COLOR_F kBorder     = {0.200f, 0.165f, 0.110f, 1.f};
@@ -54,6 +54,8 @@ namespace pal {
 struct Fmt {
     ComPtr<IDWriteTextFormat> title;     // 20pt SemiBold
     ComPtr<IDWriteTextFormat> subtitle;  // 10pt Regular
+    ComPtr<IDWriteTextFormat> titleC;    // 20pt SemiBold, horizontally centred
+    ComPtr<IDWriteTextFormat> subC;      // 10pt Regular,  horizontally centred
     ComPtr<IDWriteTextFormat> label;     // 8pt SemiBold  (card heading)
     ComPtr<IDWriteTextFormat> value;     // 13pt SemiBold (card value)
     ComPtr<IDWriteTextFormat> btn;       // 11pt SemiBold (button label)
@@ -85,6 +87,10 @@ struct Gfx {
 bool gfxCreate(HWND hwnd, Gfx& g);
 void gfxDestroy(Gfx& g);
 void gfxResize(Gfx& g, UINT w, UINT h);
+// Keep the render target's DPI in step with the window it is attached to.
+// D2D already converts DIPs -> pixels with this value, so every other stage of
+// the pipeline must treat one design unit as one DIP and never re-apply it.
+void gfxSetDpi(Gfx& g, float dpi);
 bool gfxLoadBackground(Gfx& g, HMODULE hmod, int resId); // decode RCDATA JPEG
 bool fmtCreate(Gfx& g, Fmt& f);
 
@@ -98,6 +104,11 @@ void fillGradientV (Gfx& g, D2D1_RECT_F r, D2D1_COLOR_F top, D2D1_COLOR_F bot);
 void fillGradientH (Gfx& g, D2D1_RECT_F r, D2D1_COLOR_F l,   D2D1_COLOR_F r2);
 void fillRadial    (Gfx& g, D2D1_RECT_F r, D2D1_POINT_2F c,
                    float rx, float ry, D2D1_COLOR_F inner, D2D1_COLOR_F outer);
+
+// Wallpaper. Scales the decoded JPEG uniformly to *cover* `target`, centres it,
+// clips to `target`, then paints `veil` over the result. Coordinates are DIPs,
+// so this is meant to be called with the identity transform.
+void gfxDrawBackdrop(Gfx& g, D2D1_RECT_F target, D2D1_COLOR_F veil);
 
 void drawText      (Gfx& g, IDWriteTextFormat* fmt, D2D1_RECT_F r,
                    const std::wstring& text, D2D1_COLOR_F c);

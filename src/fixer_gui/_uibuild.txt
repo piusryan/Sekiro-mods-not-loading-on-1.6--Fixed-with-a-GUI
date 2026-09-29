@@ -1,0 +1,15 @@
+'tlocal' is not recognized as an internal or external command,
+operable program or batch file.
+'Mod' is not recognized as an internal or external command,
+operable program or batch file.
+[build] Using: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat
+[build] Compiling resources ...
+[build] Compiling sources ...
+core.cpp
+gfx.cpp
+main.cpp
+Generating Code...
+
+ [OK] ModEngineFixer.exe built successfully.
+      C:\Users\Administrator\Desktop\Sekiro-ModEngine-1.6-Fix\src\fixer_gui\ModEngineFixer.exe
+

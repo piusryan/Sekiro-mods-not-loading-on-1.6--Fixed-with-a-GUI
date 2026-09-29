@@ -32,13 +32,21 @@ static constexpr wchar_t kClass[]  = L"SekiroModEngineFixer_v2";
 static constexpr wchar_t kTitle[]  = L"Mod Engine 1.6 Fixer";
 static constexpr int  kDefaultW    = 1040;
 static constexpr int  kDefaultH    = 700;
-static constexpr int  kMinW        = 820;
-static constexpr int  kMinH        = 540;
+// Minimum window size in DESIGN UNITS (multiplied by the window DPI). Kept just
+// above what the fixed part of the layout actually needs, so the window can
+// always be shrunk to fit even a small screen at 200% scaling: below this the
+// log would have nowhere left to go.
+static constexpr int  kMinW        = 720;
+static constexpr int  kMinH        = 430;
 
-// Design canvas – layout is authored at these dimensions.
-// A single uniform scale (dpi/96 × uiScale) maps them to pixels.
-static constexpr float kDW         = 1040.f;   // design width
-static constexpr float kDH         = 700.f;    // design height
+// Design canvas. Layout is authored in design units, and one design unit is
+// exactly one DIP: the Direct2D render target already converts DIPs to pixels
+// using the window's DPI, so nothing else is allowed to re-apply that factor.
+// Only the user zoom (Ctrl+Scroll) is layered on top of the design units, and
+// the content block is centred horizontally in the client area.
+static constexpr float kDW         = 1040.f;   // reference / maximum content width
+static constexpr float kDH         = 700.f;    // reference content height
+static constexpr float kMaxContentW = kDW;     // wider windows get margin, not stretch
 
 // Layout metrics (design units)
 static constexpr float kPad        = 16.f;
@@ -128,10 +136,35 @@ static float clientDipH() {
     RECT r{}; GetClientRect(g_app->hwnd, &r);
     return (r.bottom - r.top) / dipFactor();
 }
-// raw pixel → design-space (accounts for DPI + zoom)
+// ---------------------------------------------------------------------------
+// Canvas geometry
+//
+// The render target's DPI already turns DIPs into pixels, so the widget pass
+// only has to apply the user zoom and the centring offset:
+//
+//     pixelX = (designX * uiScale + x0 * uiScale) * dpi/96
+//
+// W and H are derived from the real client area, so the layout can never be
+// cropped – at any window size, DPI or zoom level. Extra width becomes margin
+// (the block stays centred and readable) and extra height goes to the log.
+// ---------------------------------------------------------------------------
+struct Canvas { float W; float H; float x0; };
+
+static Canvas canvasMetrics() {
+    const float S     = std::max(0.1f, g_app->uiScale);
+    const float avail = std::max(320.f, clientDipW() / S);   // design units
+    Canvas c;
+    c.W  = std::min(avail, kMaxContentW);
+    c.x0 = (avail - c.W) * 0.5f;                             // centre the block
+    c.H  = std::max(300.f, clientDipH() / S);
+    return c;
+}
+
+// raw pixel → design-space (undoes DPI, zoom and the centring offset)
 static void toDesign(float px, float py, float& dx, float& dy) {
-    float t = dipFactor() * g_app->uiScale;
-    dx = px / t;  dy = py / t;
+    float t = dipFactor() * std::max(0.1f, g_app->uiScale);
+    dx = px / t - canvasMetrics().x0;
+    dy = py / t;
 }
 
 // ---------------------------------------------------------------------------
@@ -286,57 +319,69 @@ static void render(App& a) {
 
     const float cW = clientDipW();   // real client width in DIPs
     const float cH = clientDipH();   // real client height in DIPs
-    const float k  = dipFactor();    // DPI scale
-    const float S  = a.uiScale;      // user zoom
-    // Combined transform: design units → pixels
-    const float tot = k * S;
+    const float S  = a.uiScale;      // user zoom (only zoom factor we apply)
+    const Canvas C = canvasMetrics();
+    const float W  = C.W;            // content width, centred in the client
+    const float H  = C.H;            // content height (fills the client)
 
     g.rt->BeginDraw();
 
-    // ── Step 1: draw background at full client size (DPI scale only) ──
-    g.rt->SetTransform(D2D1::Matrix3x2F::Scale(k, k));
-    if (g.bgBitmap) {
-        g.rt->DrawBitmap(g.bgBitmap.Get(), D2D1_RECT_F{0,0,cW,cH}, 1.f,
-                         D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
-        fillRect(g, {0,0,cW,cH}, pal::kVeil);
-    } else {
-        fillRadial(g, {0,0,cW,cH}, {cW*0.2f,cH*0.05f}, cW*1.1f, cH*1.2f,
-                   pal::kBackdropTop, pal::kBackdropBot);
-    }
-    // Atmospheric glows
+    // ── Step 1: backdrop, drawn in DIPs with the identity transform ────
+    // The render target's DPI does the DIP→pixel conversion, so this fills the
+    // whole client at any scaling factor. The wallpaper is fitted uniformly and
+    // centred, and is deliberately not affected by the UI zoom.
+    g.rt->SetTransform(D2D1::Matrix3x2F::Identity());
+    gfxDrawBackdrop(g, {0,0,cW,cH}, pal::kVeil);
+
+    // Atmospheric glows (crimson from the left, ember gold from lower right)
     fillRadial(g, {0,0,cW,cH}, {0,cH*0.4f}, cW*0.7f, cH,
                {pal::kCrimson.r,pal::kCrimson.g,pal::kCrimson.b,0.18f},{0,0,0,0});
     fillRadial(g, {0,0,cW,cH}, {cW*0.75f,cH*1.05f}, cW*0.55f, cH*0.55f,
                {pal::kGold.r,pal::kGold.g,pal::kGold.b,0.06f},{0,0,0,0});
 
-    // ── Step 2: draw all UI widgets at design scale (DPI × zoom) ──────
-    g.rt->SetTransform(D2D1::Matrix3x2F::Scale(tot, tot));
+    // ── Step 2: widget canvas (zoom + horizontal centring only) ────────
+    const D2D1::Matrix3x2F base =
+        D2D1::Matrix3x2F::Scale(S, S) *
+        D2D1::Matrix3x2F::Translation(C.x0 * S, 0.f);
+    g.rt->SetTransform(base);
 
     a.buttons.clear();
     a.cards.clear();
 
-    // Design canvas dimensions
-    const float W = kDW;
-    const float H = kDH;
     float y = kPad;
 
-    // ── Header ──────────────────────────────────────────────────────────
-    drawText(g, g.fmt.title.Get(),
-             {kPad, y, W-kPad, y+26.f}, L"MOD ENGINE 1.6 FIXER", pal::kParchment);
-    drawText(g, g.fmt.subtitle.Get(),
-             {kPad+2, y+27.f, W-kPad, y+40.f},
-             L"Resurrecting Fromashura for Sekiro: Shadows Die Twice 1.06",
+    // ── Header (centred) ───────────────────────────────────────────────
+    // A soft warm banner keeps the lettering legible whatever the wallpaper is
+    // doing directly behind it, and the zoom readout now lives in the footer,
+    // so nothing shares a band with the title any more.
+    {
+        D2D1_COLOR_F top = pal::kBg, bot = pal::kBg;
+        top.a = 0.78f; bot.a = 0.f;
+        fillGradientV(g, {0, 0, W, kPad + 52.f}, top, bot);
+        fillRadial(g, {0, 0, W, kPad + 56.f}, {W*0.5f, y + 16.f}, W*0.62f, 48.f,
+                   {pal::kGold.r,pal::kGold.g,pal::kGold.b,0.10f},{0,0,0,0});
+    }
+    drawText(g, g.fmt.titleC.Get(), {kPad, y + 1.f, W - kPad, y + 31.f},
+             L"MOD ENGINE  1.6  FIXER", pal::kGoldPale);
+    drawText(g, g.fmt.subC.Get(), {kPad, y + 32.f, W - kPad, y + 46.f},
+             L"Sekiro: Shadows Die Twice  \u2013  the 1.6 / non-Steam fix",
              pal::kMuted);
-    // Zoom % hint top-right
-    {   wchar_t hint[32];
-        swprintf_s(hint, L"Ctrl+Scroll  %d%%", (int)(S*100.f));
-        drawText(g, g.fmt.body.Get(),
-                 {W-110.f, y+2.f, W-kPad, y+14.f}, hint, pal::kDim); }
-    y += 46.f;
+    y += 52.f;
 
-    // Divider
-    fillGradientH(g, {kPad, y, W-kPad, y+1.5f}, pal::kGold, pal::kCrimson);
-    y += 7.f;
+    // Centred divider: two gold hairlines fading outward from an ember diamond.
+    {
+        const float cy = y + 1.f;
+        const float cx = W * 0.5f;
+        D2D1_COLOR_F fade = pal::kGold; fade.a = 0.f;
+        fillGradientH(g, {kPad,     cy, cx - 9.f, cy + 1.2f}, fade, pal::kGold);
+        fillGradientH(g, {cx + 9.f, cy, W - kPad, cy + 1.2f}, pal::kGold, fade);
+        const float d = 2.5f;
+        g.rt->SetTransform(
+            D2D1::Matrix3x2F::Rotation(45.f, D2D1::Point2F(cx, cy + 0.6f)) * base);
+        fillRect(g, {cx - d, cy + 0.6f - d, cx + d, cy + 0.6f + d}, pal::kGold);
+        g.rt->SetTransform(base);
+    }
+    y += 9.f;
 
     // ── Game folder row ─────────────────────────────────────────────────
     drawText(g, g.fmt.label.Get(),
@@ -480,21 +525,31 @@ static void render(App& a) {
     y += 22.f;
 
     // ── Log area ─────────────────────────────────────────────────────────
-    const float logBot = H - kPad - 16.f;
+    // Everything above is a fixed-height stack, so the log absorbs whatever
+    // height is left over. The floor keeps the rects valid if the window is
+    // squeezed to its minimum size.
+    const float footY  = H - 20.f;
+    const float logBot = std::max(y + 64.f, footY - kPad);
     a.logRect = {kPad, y, W-kPad, logBot};
     {
         std::lock_guard<std::mutex> lk(a.logMtx);
         drawLogArea(g, a.logRect, a.logLines, a.logScroll, kLogLineH);
     }
 
-    // ── Footer ────────────────────────────────────────────────────────────
-    fillGradientH(g, {kPad, logBot+2.f, W-kPad, logBot+3.f},
+    // ── Footer: toolchain left, zoom readout right (never overlaps) ───────
+    fillGradientH(g, {kPad, logBot+3.f, W-kPad, logBot+4.2f},
                   pal::kGoldDark, pal::kCrimson);
+    const float footTop = logBot + 6.f;
     std::wstring foot = a.toolchain.ok
         ? L"Toolchain:  " + a.toolchain.detail
         : L"\u26A0  "     + a.toolchain.detail;
-    drawText(g, g.fmt.body.Get(), {kPad, logBot+5.f, W-kPad, H}, foot,
-             a.toolchain.ok ? pal::kMuted : pal::kRust);
+    drawPathText(g, g.fmt.body.Get(),
+                 {kPad, footTop, W-kPad-104.f, footTop+14.f}, foot,
+                 a.toolchain.ok ? pal::kMuted : pal::kRust);
+    {   wchar_t hint[48];
+        swprintf_s(hint, L"Ctrl+Scroll  %d%%", (int)(S*100.f));
+        drawText(g, g.fmt.body.Get(),
+                 {W-kPad-96.f, footTop, W-kPad, footTop+14.f}, hint, pal::kDim); }
 
     HRESULT hr = g.rt->EndDraw();
     if (hr == D2DERR_RECREATE_TARGET) {
@@ -535,25 +590,41 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         if (a.gfx.rt) {
             UINT w=LOWORD(lParam), h=HIWORD(lParam);
             gfxResize(a.gfx, w, h);
+            // Cheap insurance: a window can change DPI without a WM_DPICHANGED
+            // (e.g. it was created before the monitor was known).
+            gfxSetDpi(a.gfx, (float)GetDpiForWindow(hwnd));
         }
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
 
     case WM_DPICHANGED:
-        a.gfx.dpi   = HIWORD(wParam);
-        a.gfx.scale = a.gfx.dpi / 96.f;
+        // The render target is what converts DIPs to pixels, so it has to be
+        // told about the new monitor scale or the whole UI keeps the old one.
+        // The text formats are sized in design units, so they need no rebuild.
+        gfxSetDpi(a.gfx, (float)HIWORD(wParam));
         { RECT* r=(RECT*)lParam;
           SetWindowPos(hwnd,nullptr,r->left,r->top,
                        r->right-r->left,r->bottom-r->top,
                        SWP_NOZORDER|SWP_NOACTIVATE); }
-        fmtCreate(a.gfx, a.gfx.fmt);
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
 
     case WM_GETMINMAXINFO:
+        // Minimum size in device pixels for the DPI in effect, then clamped to
+        // the monitor's work area. Without the clamp a minimum that is larger
+        // than the screen (easy: 820 x 540 design units is 1230 x 810 px at 150%)
+        // makes Windows push the window off-screen, cropping it.
         { auto* mm=(MINMAXINFO*)lParam; float s=dipFactor();
-          mm->ptMinTrackSize.x=(LONG)(kMinW*s);
-          mm->ptMinTrackSize.y=(LONG)(kMinH*s); }
+          int mw=(int)(kMinW*s), mh=(int)(kMinH*s);
+          MONITORINFO mi{sizeof(mi)};
+          if (GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi)) {
+              const int aw = mi.rcWork.right - mi.rcWork.left;
+              const int ah = mi.rcWork.bottom - mi.rcWork.top;
+              if (mw > aw) mw = aw;
+              if (mh > ah) mh = ah;
+          }
+          mm->ptMinTrackSize.x = mw;
+          mm->ptMinTrackSize.y = mh; }
         return 0;
 
     case WM_PAINT:
@@ -696,10 +767,21 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nShow) {
         return 1;
     }
 
-    float s  = (float)GetDpiForSystem()/96.f;
-    int wW=(int)(kDefaultW*s), wH=(int)(kDefaultH*s);
-    int wX=(GetSystemMetrics(SM_CXSCREEN)-wW)/2;
-    int wY=(GetSystemMetrics(SM_CYSCREEN)-wH)/2;
+    // Size the window so the *client* area is kDefaultW x kDefaultH design
+    // units. CreateWindowExW takes the outer window size, and the border plus
+    // caption used to eat ~16x39 px of the canvas, which cropped the right and
+    // bottom edges. Centre it inside the work area (not the raw screen, or the
+    // taskbar would cover the footer) and clamp it so it always fits.
+    RECT wa{};
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
+    const UINT  dpi = GetDpiForSystem();
+    const float s   = (float)dpi / 96.f;
+    RECT wr{0, 0, (LONG)(kDefaultW*s), (LONG)(kDefaultH*s)};
+    AdjustWindowRectExForDpi(&wr, WS_OVERLAPPEDWINDOW, FALSE, 0, dpi);
+    const int wW = (int)std::min<LONG>(wr.right - wr.left, wa.right - wa.left);
+    const int wH = (int)std::min<LONG>(wr.bottom - wr.top, wa.bottom - wa.top);
+    const int wX = wa.left + (wa.right - wa.left - wW) / 2;
+    const int wY = wa.top  + (wa.bottom - wa.top  - wH) / 2;
 
     HWND hwnd = CreateWindowExW(0, kClass, kTitle, WS_OVERLAPPEDWINDOW,
                                 wX, wY, wW, wH,
