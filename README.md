@@ -1,16 +1,20 @@
-# Mod Engine for Sekiro 1.6 / non-Steam DRM
+# Mod Engine for Sekiro 1.6 — fixed, with a GUI
 
 Mod Engine (by [katalash](https://github.com/katalash/ModEngine)) lets you load
 loose `.dcx` and `.tpf` files from a `mods\` folder instead of the ones baked
 into the game's archives. That is how skin, sword, loading-screen and text mods
 are installed.
 
-**The stock 0.1.16 release silently does nothing on Sekiro 1.6, or on any
-non-Steam copy of the game.** It starts, the game runs, no errors appear — and
-your mods are never loaded.
+**The stock 0.1.16 release silently does nothing on Sekiro 1.6.** It starts, the
+game runs, no errors appear — and your mods are never loaded.
 
 This repository is a patched build of Mod Engine that fixes that, plus a small
 GUI and a verification tool so you can prove the mods actually loaded.
+
+> **Scope.** This targets the official *Sekiro: Shadows Die Twice* release on
+> Steam — the current 1.6.0.0 build, plus the older 1.02/1.03 builds. It is not
+> intended for, and does not support, unofficial copies of the game. See
+> [Which game build is this for](#which-game-build-is-this-for).
 
 ---
 
@@ -47,21 +51,37 @@ every single time.
 
 Two separate bugs. You have to fix both.
 
-### Bug 1 — the hook is never installed
+### Bug 1 — the hook is installed too early and depends on load order
 
 Mod Engine only sets up its file hooks as a side effect of the game calling
 `SteamAPI_Init`. In `dllmain.cpp` it detours `steam_api64.dll!SteamAPI_Init`
-and runs the real setup inside that detour.
+from inside `DllMain` and runs the real setup inside that detour.
 
-On a non-Steam copy, `steam_api64.dll` comes from a DRM emulator
-(SmartSteamEmu, CreamAPI, etc.). Those DLLs ship **encrypted on disk and
-self-decrypt in memory at load time.** The decryption writes over the whole
-image, which destroys the MinHook trampoline patch Mod Engine installed moments
-earlier. By the time the game calls `SteamAPI_Init`, the detour is gone and
-`HookModLoader()` never runs.
+That hands the entire mod-loading system to two conditions Mod Engine does not
+control:
 
-You can confirm this yourself — dump `SteamAPI_Init` while the game is running.
-It is a normal, unhooked function prologue, not a jump.
+1. **`steam_api64.dll` is already mapped** when our `DllMain` runs, so
+   `GetProcAddress` finds an address to detour.
+2. **The detour is still intact** at the moment the game actually calls
+   `SteamAPI_Init`.
+
+Neither is guaranteed. `DllMain` runs while the Windows loader is still holding
+the loader lock and while other modules are still initialising, so writing a
+patch into another module's code at that point is working against the loader.
+On a slow start, on a machine with overlay or security software injected, or on
+a Steam install that is updating its redistributables at launch, the patch is
+either never written or is undone before the call arrives. The hook then never
+runs, and nothing in the log says so.
+
+This is not exotic. It is a load-order race, and losing it is the single most
+common "Mod Engine does nothing" report.
+
+You can confirm the detour is missing yourself — dump `SteamAPI_Init` while the
+game is running. It is a normal, unhooked function prologue, not a jump.
+
+The fix is to stop depending on module load order at all: drive the setup from
+a worker thread created after `DllMain` returns, with bounded retry, and keep
+the Steam detour only as an optional extra path.
 
 ### Bug 2 — the version check rejects your exe
 
@@ -85,8 +105,8 @@ Full technical analysis with the disassembly evidence: **[docs/ROOT_CAUSE.md](do
 
 | | Stock 0.1.16 | This build |
 |---|---|---|
-| Hook trigger | `SteamAPI_Init` detour only | Detour **plus** a worker thread with retry |
-| Survives an emulator's self-decryption | No | Yes — the hook is installed after decryption |
+| Hook trigger | `SteamAPI_Init` detour only | Worker thread with bounded retry, plus the detour as an extra path |
+| Survives module load-order races | No | Yes — the hook waits until module init has settled |
 | Version gate | 1.02/1.03 file sizes only, then blocks | Removed, with the reason logged |
 | Game detection | Stub hardcoded to Dark Souls II | Real detection from the exe name |
 | Hardcoded 1.02/1.03 patch addresses | Present, land on random code on 1.6 | Removed |
@@ -101,6 +121,22 @@ Full technical analysis with the disassembly evidence: **[docs/ROOT_CAUSE.md](do
 ---
 
 ## Requirements
+
+### Which game build is this for
+
+| `sekiro.exe` version | Size (bytes) | Works? |
+|---|---|---|
+| 1.02 | 65,682,008 (65,682,312 unpacked) | Yes |
+| 1.03 | 65,688,152 | Yes |
+| **1.6.0.0** | **67,799,112** | Yes — this is the build the fix targets |
+
+Stock Mod Engine 0.1.16 accepts only the 1.02 and 1.03 sizes, so 1.6 is rejected
+outright. This build drops that check and logs the size it actually found.
+
+Official Steam release only. If the GUI's `GAME BUILD` card does not recognise
+your `sekiro.exe`, it is not a release build and this is not supported.
+
+### What you need to run it
 
 Pick whichever row matches how you got this.
 

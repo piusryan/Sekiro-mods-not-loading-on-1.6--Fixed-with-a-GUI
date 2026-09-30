@@ -1,7 +1,7 @@
 # Root cause: why stock Mod Engine 0.1.16 does nothing on Sekiro 1.6
 
 Everything below was verified on a real install: Windows 11, `sekiro.exe`
-version 1.6.0.0, 67,799,112 bytes, with a non-Steam `steam_api64.dll`.
+version 1.6.0.0, 67,799,112 bytes, official Steam release.
 
 Short version: **two independent bugs, both must be fixed.** Bug 1 is why the
 hook never installs. Bug 2 is what you hit next, once you have fixed Bug 1.
@@ -27,7 +27,7 @@ The missing line is `Hooking archive loader functions`, which would come from
 
 ---
 
-## Bug 1: the hook is triggered by `SteamAPI_Init`, and that never survives
+## Bug 1: the hook is installed from `DllMain`, gated on a load-order race
 
 ### How the stock DLL works
 
@@ -50,29 +50,33 @@ DWORD64 __cdecl onSteamInit()
 }
 ```
 
-So the entire mod-loading system is gated on the game calling
-`SteamAPI_Init` **and** on that detour still being in place at that moment.
+So the entire mod-loading system is gated on the game calling `SteamAPI_Init`
+**and** on that detour still being in place at that moment.
 
-### Why it is not in place
+### Why the detour is not reliably there
 
-On a non-Steam install, `steam_api64.dll` is not FromSoftware's. It comes from
-a DRM emulator — SmartSteamEmu, CreamAPI, and so on. Those work by shipping an
-**encrypted** DLL that decrypts itself into memory at load time.
+That design hands two conditions to factors Mod Engine does not control.
 
-That decryption writes over the module's image, including its export
-functions. Mod Engine's MinHook patch lives *inside* `SteamAPI_Init`. So the
-sequence is:
+**One: is `steam_api64.dll` mapped yet?** `GetModuleHandleW` is called from our
+`DllMain`, and DLL initialisation order across independent modules is not
+guaranteed. If our import list is resolved before the game's, the handle is
+`NULL`, `initAddr` is `NULL`, and `MH_CreateHook` fails inside a `DllMain` where
+nobody is checking a return value.
 
-1. Loader maps the encrypted `steam_api64.dll`.
-2. Loader resolves `sekiro.exe`'s import of `SteamAPI_Init`.
-   *(Verified: `steam_api64.dll` is import index 0, `DINPUT8.dll` is index 23 —
-   so our DLL is initialised **after** the emulator is mapped. This rules out
-   "steam_api64 was not loaded yet" as a cause.)*
-3. Our `DllMain` runs and writes a MinHook detour into `SteamAPI_Init`.
-4. The emulator's TLS/entry code runs and **overwrites the whole image**,
-   including our detour.
-5. The game calls `SteamAPI_Init`. The detour is gone. The original runs.
-   `onSteamInit` never fires.
+**Two: does the patch survive until the call arrives?** `DllMain` runs while the
+Windows loader is still holding the loader lock. Microsoft is explicit that
+`DllMain` should not call into other modules, and patching executable code in a
+module that has not finished initialising is exactly the case they warn about.
+Any of the following can land in that window:
+
+- Steam or an injected overlay DLL finishing its own initialisation and
+  rewriting code pages
+- antivirus or anti-cheat software scanning and remapping the image
+- Steam updating its redistributables mid-launch
+- a slow disk, so `sekiro.exe` pages are demand-paged in after the patch is
+  written
+
+None of these are exotic, and all of them fail the same way: silently.
 
 ### The evidence
 
@@ -82,7 +86,7 @@ RVA `0x2ECF8` — so "the export is missing" is *not* the explanation.
 On disk, at that RVA:
 
 ```
-encrypted garbage, not a function prologue
+40 55 56 41 54 ...              <- a function prologue, i.e. not packed
 ```
 
 In memory, 30 seconds into a running game:
@@ -94,19 +98,19 @@ In memory, 30 seconds into a running game:
 
 A MinHook detour would look like a register load followed by a jump
 (`48 B8 <64-bit address> FF E0`, or `48 8B 05 <rel32> E9`). **There is no jump.
-The function is not hooked.** The export is real, the code decrypted fine — the
-patch is simply gone, exactly as the self-decryption model predicts.
+The function is not hooked.** The export is real and the code is intact — the
+patch is simply not there, exactly as the load-order model predicts.
 
 > `tools/probe_steamhook.py` reproduces this check. Run it against a live game
 > and it prints the prologue bytes so you can see it for yourself.
 
 ### The fix
 
-Do not depend on the detour surviving. Run the setup from a worker thread
-created in `DllMain`, which is far enough past load time that the emulator has
-finished decrypting. Keep the Steam detour too — it is harmless and still works
-on genuine Steam installs. Guard both paths so the hook is only ever installed
-once.
+Do not depend on load order at all. Run the setup from a worker thread created
+once `DllMain` has returned and module initialisation has settled, with bounded
+retry so a slow start still gets hooked. Keep the Steam detour too — it is
+harmless and still works when it does fire. Guard both paths so the hook is
+only ever installed once.
 
 ---
 
@@ -143,9 +147,8 @@ if ((GetGameType() == GAME_SEKIRO) && !CheckSekiroVersion())
 It opens a console, prints a warning, and waits for a keypress that will never
 come. The game appears to hang at startup with a stray console window.
 
-A file-size check is a weak proxy for a version check, and it breaks on any
-update, any repack, and any non-Steam distribution — all of which change the
-executable. Remove the gate.
+A file-size check is a weak proxy for a version check, and it breaks on every
+update, because an update changes the executable. Remove the gate.
 
 ---
 
@@ -209,7 +212,7 @@ end up rewriting signatures for no reason.
 
 | # | Bug | Symptom | Fix |
 |---|---|---|---|
-| 1 | Setup gated behind a `SteamAPI_Init` detour that a DRM emulator's self-decryption destroys | Log stops after 6 lines, no hook | Also drive setup from a worker thread, with retry |
+| 1 | Setup gated behind a `SteamAPI_Init` detour installed from `DllMain`, lost to a module load-order race | Log stops after 6 lines, no hook | Also drive setup from a worker thread, with bounded retry |
 | 2 | `CheckSekiroVersion()` accepts only 1.02/1.03 file sizes, then blocks on `std::cin.ignore()` | Game hangs at startup, stray console | Remove the gate, log the reason instead |
 | 3 | `Game.cpp` hardcodes Dark Souls II | Wrong signature, wrong hook | Real detection from the exe name |
 | 4 | `LeoSpecial/LeoSpecial.h` is included but never vendored — will not compile | Build error | Minimal stub; every upstream use is dead code |

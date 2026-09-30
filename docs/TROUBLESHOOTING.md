@@ -25,9 +25,10 @@ Mod Engine. If it is 0, work down this page.
 [ModEngine] Patching memory limit table at 0000000143B1BB90
 ```
 
-**Cause.** You are running the stock 0.1.16 DLL. It only installs its file hooks
-from a detour on `steam_api64.dll!SteamAPI_Init`, and on a non-Steam copy that
-DLL decrypts itself at load time and wipes the patch. The detour never fires.
+**Cause.** You are running the stock 0.1.16 DLL. It installs its file hooks from
+a detour on `steam_api64.dll!SteamAPI_Init`, written from inside `DllMain`. That
+makes the hook depend on module load order, and the race is lost often enough to
+be the most common report of this symptom. The detour never fires.
 
 **Fix.** Use the DLL from this repository. See [ROOT_CAUSE.md](ROOT_CAUSE.md).
 

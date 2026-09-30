@@ -18,7 +18,7 @@ The full patched tree is also in `src/`, so you can copy files instead if
 
 | File | Status | What it does |
 |---|---|---|
-| `dllmain.cpp` | rewritten | Trigger the hook without Steam; drop the version gate; drop the unsafe patches; add logging and a crash filter |
+| `dllmain.cpp` | rewritten | Drive the hook from a worker thread instead of a load-order-dependent Steam detour; drop the version gate; drop the unsafe patches; add logging and a crash filter |
 | `Game.cpp` | rewritten | Real game detection instead of a hardcoded Dark Souls II |
 | `Game.h` | edited | Added `GAME_UNKNOWN` so "not a game we know" is representable |
 | `ModLoader.cpp` | extended | Per-file override logging, inventory scan, hit/miss counters; `wprintf` routed to the logger |
@@ -40,8 +40,9 @@ The old file was 471 lines of Steam-centric setup. The new one is ~150.
 
 ### Hook trigger
 
-`InitInstance()` no longer returns after detouring `SteamAPI_Init`. It spawns
-`HookWorker`, which retries for up to 15 seconds:
+`InitInstance()` no longer depends on detouring `SteamAPI_Init` having been
+written and survived. It spawns `HookWorker`, which retries for up to 15
+seconds:
 
 ```cpp
 for (int attempt = 1; attempt <= 10; attempt++)
@@ -54,11 +55,14 @@ for (int attempt = 1; attempt <= 10; attempt++)
 }
 ```
 
-The retry is not decoration. On a packed or unusually slow start the image can
-still be settling on the first attempt, and failing permanently because the
-game was 200 ms too slow is a terrible trade. Two `std::atomic<bool>` flags
-(`gHooksInstalled`, `gHookFailed`) make it idempotent, so the worker thread and
-the Steam detour — both still present — can race without double-hooking.
+The retry is not decoration. `DllMain` runs under the loader lock, and the stock
+build patched another module's code from inside it, which is a load-order race
+that is frequently lost. Running the setup from a worker thread once
+initialisation has settled removes the dependency; the retry then covers a
+genuinely slow start, and failing permanently because the game was 200 ms too
+slow is a terrible trade. Two `std::atomic<bool>` flags (`gHooksInstalled`,
+`gHookFailed`) make it idempotent, so the worker thread and the Steam detour —
+both still present — can race without double-hooking.
 
 `MELog()` is called before `GetGameType()` and before any hook, so the log
 explains itself even when init fails.

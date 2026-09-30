@@ -14,18 +14,21 @@ Mod Engine lets loose `.dcx` and `.tpf` files sitting in a `mods\` folder
 override the game's own files, which is how skin, sword, text and
 loading-screen mods work.
 
-The stock 0.1.16 release **silently does nothing** on Sekiro 1.6 and on
-non-Steam copies of the game. No error, no crash — the mods just quietly do
-not appear. Two separate bugs cause that, both fixed here:
+The stock 0.1.16 release **silently does nothing** on Sekiro 1.6. No error, no
+crash — the mods just quietly do not appear. Two separate bugs cause that, both
+fixed here:
 
-1. Mod Engine only installs its file hooks as a side effect of the game
-   calling `SteamAPI_Init`. On a non-Steam install that DLL decrypts itself
-   at load time and overwrites the hook, so it never gets installed.
+1. Mod Engine installs its file hooks from a detour on `SteamAPI_Init`, written
+   from inside `DllMain`. That makes the hook depend on module load order, and
+   the race is lost often enough to be the most common report of this symptom.
 2. A version check rejects anything that is not Sekiro 1.02/1.03, and your
    1.6 executable fails it.
 
 This tool builds a corrected version of the DLL, installs it safely, and then
 shows you hard evidence that your mods loaded.
+
+> This targets the official Steam release. It is not intended for, and does not
+> support, unofficial copies of the game.
 
 ---
 
@@ -192,9 +195,9 @@ What it actually does:
 
 - **Needs:** a valid game folder and an installed DLL.
 - **Why a button instead of your normal shortcut:** Mod Engine finds `mods\`
-  relative to the current working directory. A desktop shortcut or a non-Steam
-  launcher often sets that somewhere else, and the mods silently fail to load.
-  This button sets it correctly.
+  relative to the current working directory. A desktop shortcut, a taskbar
+  icon, or launching from a launcher often sets that somewhere else, and the
+  mods silently fail to load. This button sets it correctly.
 - **No console window appears.** The log is tailed in the app instead. See
   [No console window](#no-console-window).
 - **After playing:** close the game, then press **Refresh**.

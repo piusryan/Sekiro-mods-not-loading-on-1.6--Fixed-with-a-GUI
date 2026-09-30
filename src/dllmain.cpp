@@ -13,11 +13,11 @@ static std::atomic<bool> gHooksInstalled(false);
 static std::atomic<bool> gHookFailed(false);
 
 // ---------------------------------------------------------------------------
-// Hook application. The stock Mod Engine only reaches this code from a
-// SteamAPI_Init detour, which never fires under SmartSteamEmu because that DLL
-// decrypts itself at runtime and clobbers the early MinHook patch. We drive it
-// from a worker thread instead, with a retry so a late-decrypted image can still
-// be found.
+// Hook application. The stock Mod Engine reaches this code only from a
+// SteamAPI_Init detour written from inside DllMain, which patches another
+// module's code under the loader lock - a load-order race that is frequently
+// lost, leaving no hook and no error. We drive it from a worker thread once
+// module init has settled, with a bounded retry for slow starts.
 // ---------------------------------------------------------------------------
 static void ApplyOverrideHooks()
 {
